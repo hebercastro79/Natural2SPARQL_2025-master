@@ -15,7 +15,7 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -38,8 +38,7 @@ public class QuestionProcessor {
             if (!resource.exists()) {
                 throw new FileNotFoundException("Script Python não encontrado no classpath: pln_processor.py");
             }
-
-            Path tempDir = Files.createTempDirectory("pyscripts_temp_");
+            Path tempDir = Files.createTempDirectory("pyscripts_");
             this.pythonScriptPath = tempDir.resolve("pln_processor.py");
             try (InputStream inputStream = resource.getInputStream()) {
                 Files.copy(inputStream, this.pythonScriptPath);
@@ -47,105 +46,73 @@ public class QuestionProcessor {
             this.pythonScriptPath.toFile().setExecutable(true, false);
             this.pythonScriptPath.toFile().deleteOnExit();
             logger.info("Script Python extraído para path temporário executável: {}", this.pythonScriptPath);
-
         } catch (IOException e) {
             logger.error("CRÍTICO: Erro ao inicializar e preparar script Python: {}", e.getMessage(), e);
-            this.pythonScriptPath = null;
         }
     }
     
-    private Map<String, Object> executePythonScript(String question) throws IOException, InterruptedException {
-        String pythonExec = System.getProperty("python.executable", "python3");
-        
-        ProcessBuilder pb = new ProcessBuilder(pythonExec, this.pythonScriptPath.toString(), question);
-        pb.environment().put("PYTHONIOENCODING", "UTF-8");
-        logger.info("Executando comando Python: {}", pb.command());
-        Process process = pb.start();
-
-        String stdoutResult;
-        try (var reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            stdoutResult = reader.lines().collect(Collectors.joining(System.lineSeparator()));
-        }
-
-        int exitCode = process.waitFor();
-        if (exitCode != 0) {
-            String stderrResult;
-            try (var reader = new BufferedReader(new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
-                stderrResult = reader.lines().collect(Collectors.joining(System.lineSeparator()));
-            }
-            logger.error("Script Python falhou com código {}. Stderr: {}", exitCode, stderrResult);
-            throw new IOException("Falha na execução do script Python. Veja os logs do servidor.");
-        }
-        
-        logger.info("Saída (stdout) do script Python: {}", stdoutResult);
-        return new ObjectMapper().readValue(stdoutResult, new TypeReference<>() {});
-    }
-
-    private String buildSparqlQuery(String templateContent, Map<String, String> placeholders) {
-        String query = templateContent;
-        if (placeholders == null) return query;
-
-        for (Map.Entry<String, String> entry : placeholders.entrySet()) {
-            String key = entry.getKey();
-            String value = entry.getValue();
-            query = query.replace(key, value);
-        }
-        return query;
-    }
-
     public ProcessamentoDetalhadoResposta processQuestion(String question) {
-        logger.info("Serviço QuestionProcessor: Iniciando processamento da pergunta: '{}'", question);
-        ProcessamentoDetalhadoResposta respostaDetalhada = new ProcessamentoDetalhadoResposta();
-
+        ProcessamentoDetalhadoResposta resposta = new ProcessamentoDetalhadoResposta();
         try {
-            Map<String, Object> pythonResult = executePythonScript(question);
-            
-            if (pythonResult.containsKey("erro")) {
-                String erroPython = (String) pythonResult.get("erro");
-                logger.error("Script Python retornou um erro: {}", erroPython);
-                respostaDetalhada.setErro("Falha no processamento da pergunta: " + erroPython);
-                return respostaDetalhada;
+            Map<String, Object> pyResult = executePythonScript(question);
+            if (pyResult.containsKey("erro")) {
+                resposta.setErro((String) pyResult.get("erro"));
+                return resposta;
             }
 
-            String templateId = (String) pythonResult.get("template_nome");
+            String templateId = (String) pyResult.get("template_nome");
             @SuppressWarnings("unchecked")
-            Map<String, String> placeholders = (Map<String, String>) pythonResult.get("mapeamentos");
+            Map<String, String> placeholders = (Map<String, String>) pyResult.get("mapeamentos");
 
             String templateContent = readTemplateContent(templateId);
             String sparqlQuery = buildSparqlQuery(templateContent, placeholders);
-            respostaDetalhada.setSparqlQuery(sparqlQuery);
+            resposta.setSparqlQuery(sparqlQuery);
 
-            String targetVariable = "valor";
-            if ("Template_2A".equals(templateId) || "Template_3A".equals(templateId)) {
-                targetVariable = "ticker";
-            }
+            String targetVariable = "ticker".equals(templateId.replace("Template_", "").substring(0, 1)) || "2A".equals(templateId.replace("Template_", "")) || "3A".equals(templateId.replace("Template_", "")) ? "ticker" : "valor";
             
             List<String> results = ontology.executeQuery(sparqlQuery, targetVariable);
 
             if (results == null) {
-                respostaDetalhada.setErro("Ocorreu um erro ao executar a consulta na base de conhecimento.");
+                resposta.setErro("Erro ao executar a consulta na base de conhecimento.");
             } else if (results.isEmpty()) {
-                respostaDetalhada.setResposta("Não foram encontrados resultados para a sua pergunta.");
+                resposta.setResposta("Não foram encontrados resultados para a sua pergunta.");
             } else {
-                respostaDetalhada.setResposta(String.join(", ", results));
+                resposta.setResposta(String.join(", ", results));
             }
-            
         } catch (Exception e) {
             logger.error("Erro geral no processamento da pergunta: {}", e.getMessage(), e);
-            respostaDetalhada.setErro("Ocorreu um erro interno no servidor durante o processamento.");
+            resposta.setErro("Ocorreu um erro interno no servidor durante o processamento.");
         }
-
-        return respostaDetalhada;
+        return resposta;
     }
-    
+
+    private Map<String, Object> executePythonScript(String question) throws IOException, InterruptedException {
+        ProcessBuilder pb = new ProcessBuilder("python3", this.pythonScriptPath.toString(), question);
+        pb.environment().put("PYTHONIOENCODING", "UTF-8");
+        Process process = pb.start();
+        String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        int exitCode = process.waitFor();
+        if (exitCode != 0) {
+            String stderr = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+            logger.error("Script Python falhou com código {}. Stderr: {}", exitCode, stderr);
+            throw new IOException("Falha na execução do script Python.");
+        }
+        logger.info("Saída (stdout) do script Python: {}", stdout);
+        return new ObjectMapper().readValue(stdout, new TypeReference<>() {});
+    }
+
+    private String buildSparqlQuery(String templateContent, Map<String, String> placeholders) {
+        String query = templateContent;
+        for (Map.Entry<String, String> entry : placeholders.entrySet()) {
+            query = query.replace(entry.getKey(), entry.getValue());
+        }
+        return query;
+    }
+
     private String readTemplateContent(String templateId) throws IOException {
-        String templateFileName = templateId + ".txt";
-        String templateResourcePath = "Templates/" + templateFileName;
-        Resource resource = new ClassPathResource(templateResourcePath);
-        if (!resource.exists()) throw new FileNotFoundException("Template SPARQL não encontrado: " + templateResourcePath);
-        
-        try (InputStream inputStream = resource.getInputStream()) {
-            return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+        String path = "Templates/" + templateId + ".txt";
+        try (InputStream in = new ClassPathResource(path).getInputStream()) {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
 }
