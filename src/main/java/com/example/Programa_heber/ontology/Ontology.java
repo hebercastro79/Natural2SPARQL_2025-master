@@ -26,37 +26,58 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.regex.Pattern;
 
+// Importações explícitas para evitar ambiguidade e erros de "cannot find symbol"
+import org.apache.jena.vocabulary.RDF;
+import org.apache.jena.vocabulary.RDFS;
+
+
 @Component
 public class Ontology {
+
     private static final Logger logger = LoggerFactory.getLogger(Ontology.class);
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    
+    // Declaração das constantes estáticas da classe
     private static final String ONT_PREFIX = "https://dcm.ffclrp.usp.br/lssb/stock-market-ontology#";
+    private static final String[] PREGAO_FILES = { "Datasets/dados_novos_anterior.xlsx", "Datasets/dados_novos_atual.xlsx" };
+    private static final String INFO_EMPRESAS_FILE = "Templates/Informacoes_Empresas.xlsx";
+    private static final String ONTOLOGY_FILE = "ontologiaB3.ttl";
+    private static final String INFERENCE_OUTPUT_FILE = "ontologiaB3_com_inferencia.ttl"; // Variável que estava faltando
+
     private Model baseModel;
     private InfModel infModel;
 
     @PostConstruct
     public void init() {
-        logger.info(">>> INICIANDO Inicialização da Ontologia...");
+        logger.info(">>> INICIANDO Inicialização da Ontologia (@PostConstruct)...");
         lock.writeLock().lock();
         try {
             baseModel = ModelFactory.createDefaultModel();
             baseModel.setNsPrefix("b3", ONT_PREFIX);
             baseModel.setNsPrefix("rdfs", RDFS.getURI());
+            baseModel.setNsPrefix("rdf", RDF.getURI());
             baseModel.setNsPrefix("xsd", XSDDatatype.XSD + "#");
 
-            loadRdfData("ontologiaB3.ttl", Lang.TURTLE, "Esquema base da Ontologia");
-            loadInformacoesEmpresas("Templates/Informacoes_Empresas.xlsx");
-            loadDadosPregaoExcel("Datasets/dados_novos_anterior.xlsx");
-            loadDadosPregaoExcel("Datasets/dados_novos_atual.xlsx");
+            loadRdfData(ONTOLOGY_FILE, Lang.TURTLE, "Esquema base da Ontologia");
+            loadInformacoesEmpresas(INFO_EMPRESAS_FILE);
+            
+            for (String filePath : PREGAO_FILES) {
+                loadDadosPregaoExcel(filePath);
+            }
 
-            logger.info("Total triplas base: {}. Criando modelo de inferência...", baseModel.size());
+            logger.info("Total de triplas no modelo base antes da inferência: {}", baseModel.size());
+            
+            logger.info("--- Configurando Reasoner e criando modelo de inferência ---");
             Reasoner reasoner = ReasonerRegistry.getRDFSReasoner();
             infModel = ModelFactory.createInfModel(reasoner, baseModel);
-            logger.info("Modelo de inferência criado. Total triplas: {}", infModel.size());
+            logger.info("--- Modelo de inferência criado. Total de triplas (base + inferidas): {} ---", infModel.size());
+
             saveInferredModel();
             logger.info("<<< ONTOLOGIA INICIALIZADA COM SUCESSO >>>");
+
         } catch (Exception e) {
             logger.error("!!!!!!!! FALHA GRAVE NA INICIALIZAÇÃO DA ONTOLOGY !!!!!!!!", e);
+            baseModel = null; infModel = null;
         } finally {
             lock.writeLock().unlock();
         }
@@ -65,23 +86,29 @@ public class Ontology {
     private void loadInformacoesEmpresas(String resourcePath) throws IOException {
         logger.info(">> Carregando Informações de Empresas de: {}", resourcePath);
         int rowsProcessed = 0;
+        
         var resourceFile = new ClassPathResource(resourcePath);
+        if (!resourceFile.exists()) throw new FileNotFoundException("Arquivo de empresas não encontrado: " + resourcePath);
+
         try (InputStream excelFile = resourceFile.getInputStream(); Workbook workbook = new XSSFWorkbook(excelFile)) {
             Sheet sheet = workbook.getSheetAt(0);
+            
             for (Row row : sheet) {
-                if (row.getRowNum() == 0) continue;
+                if (row.getRowNum() == 0) continue; 
                 String nomeEmpresa = getStringCellValue(row.getCell(0)); // Col A
                 String tickersStr = getStringCellValue(row.getCell(1));  // Col B
                 String setor = getStringCellValue(row.getCell(5));        // Col F
-                if (nomeEmpresa == null || tickersStr == null) continue;
+
+                if (nomeEmpresa == null || nomeEmpresa.isBlank() || tickersStr == null || tickersStr.isBlank()) continue;
                 
                 Resource empresaResource = baseModel.createResource(ONT_PREFIX + "Empresa_" + normalizarTextoJava(nomeEmpresa));
                 add(empresaResource, RDFS.label, baseModel.createLiteral(nomeEmpresa.trim(), "pt"));
                 add(empresaResource, RDF.type, getResource("Empresa_Capital_Aberto"));
 
-                if (setor != null) {
+                if (setor != null && !setor.isBlank()) {
                     Resource setorResource = baseModel.createResource(ONT_PREFIX + "Setor_" + normalizarTextoJava(setor));
                     add(setorResource, RDFS.label, baseModel.createLiteral(setor.trim(), "pt"));
+                    add(setorResource, RDF.type, getResource("Setor_Atuacao"));
                     add(empresaResource, getProperty("atuaEm"), setorResource);
                 }
 
@@ -101,19 +128,21 @@ public class Ontology {
         }
         logger.info("<< Informações de Empresas carregado. {} linhas processadas.", rowsProcessed);
     }
-
+    
     private void loadDadosPregaoExcel(String resourcePath) throws IOException {
         logger.info(">> Carregando Dados de Pregão de: {}", resourcePath);
         int rowsProcessed = 0;
         var resourceFile = new ClassPathResource(resourcePath);
+        if (!resourceFile.exists()) throw new FileNotFoundException("Arquivo de pregão não encontrado: " + resourcePath);
+        
         try (InputStream excelFile = resourceFile.getInputStream(); Workbook workbook = new XSSFWorkbook(excelFile)) {
             Sheet sheet = workbook.getSheetAt(0);
             for (Row row : sheet) {
                 if (row.getRowNum() == 0) continue;
-                String ticker = getStringCellValue(row.getCell(4)); // Col E
+                String ticker = getStringCellValue(row.getCell(4)); // Coluna E
                 if (ticker == null || !ticker.matches("^[A-Z]{4}\\d{1,2}$")) continue;
                 
-                Date dataPregao = parseDateFromCell(row.getCell(2)); // Col C
+                Date dataPregao = parseDateFromCell(row.getCell(2)); // Coluna C
                 if (dataPregao == null) continue;
                 String dataFmt = new SimpleDateFormat("yyyy-MM-dd").format(dataPregao);
 
@@ -121,7 +150,7 @@ public class Ontology {
                 if (!baseModel.containsResource(vmResource)) continue;
                 
                 Resource negociadoResource = baseModel.createResource(ONT_PREFIX + "Negociado_" + ticker + "_" + dataFmt.replace("-", ""));
-                Resource pregaoResource = baseModel.createResource(ONT_PREFIX + "Pregao_" + dataFmt.replace("-", ""));
+                Resource pregaoResource = baseModel.createResource(ONT_PREFIX + "Pregao_" + dataFmt.replace("-", ""), getResource("Pregao"));
                 
                 add(vmResource, getProperty("negociado"), negociadoResource);
                 add(negociadoResource, RDF.type, getResource("Negociado_Em_Pregao"));
@@ -162,12 +191,11 @@ public class Ontology {
         }
     }
 
-    // --- Métodos Auxiliares ---
     private String normalizarTextoJava(String texto) {
         if (texto == null) return "";
         String nfd = Normalizer.normalize(texto.toLowerCase(Locale.ROOT), Normalizer.Form.NFD);
         return Pattern.compile("\\p{InCombiningDiacriticalMarks}+").matcher(nfd)
-                .replaceAll("").replaceAll("[^a-z0-9\\s]", "").trim().replaceAll("\\s+", "_");
+                .replaceAll("").replaceAll("[^a-z0-9\\s-]", "").trim().replaceAll("\\s+", "_");
     }
 
     private void loadRdfData(String path, Lang lang, String desc) throws IOException {
@@ -178,9 +206,13 @@ public class Ontology {
     }
 
     private void saveInferredModel() {
-        try (OutputStream out = new FileOutputStream(INFERENCE_OUTPUT_FILE)) {
-            RDFDataMgr.write(out, infModel, Lang.TURTLE);
-            logger.info("✓ Modelo RDF inferido salvo em {}", new File(INFERENCE_OUTPUT_FILE).getAbsolutePath());
+        try {
+            Path outputPath = Paths.get(INFERENCE_OUTPUT_FILE);
+            logger.info("Tentando salvar modelo RDF inferido em: {}", outputPath.toAbsolutePath());
+            try (OutputStream out = Files.newOutputStream(outputPath)) {
+                RDFDataMgr.write(out, infModel, Lang.TURTLE);
+                logger.info("✓ Modelo RDF inferido salvo com sucesso.");
+            }
         } catch (Exception e) {
             logger.warn("! Não foi possível salvar modelo inferido: {}", e.getMessage());
         }
@@ -197,8 +229,13 @@ public class Ontology {
     private Date parseDateFromCell(Cell cell) {
         if (cell == null) return null;
         try {
-            if (cell.getCellType() == CellType.NUMERIC) return cell.getDateCellValue();
-            if (cell.getCellType() == CellType.STRING) return new SimpleDateFormat("yyyyMMdd").parse(cell.getStringCellValue());
+            if (cell.getCellType() == CellType.NUMERIC) {
+                if (DateUtil.isCellDateFormatted(cell)) return cell.getDateCellValue();
+                return new SimpleDateFormat("yyyyMMdd").parse(String.valueOf((long)cell.getNumericCellValue()));
+            }
+            if (cell.getCellType() == CellType.STRING) {
+                return new SimpleDateFormat("yyyyMMdd").parse(cell.getStringCellValue());
+            }
         } catch (Exception ignored) {}
         return null;
     }

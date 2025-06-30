@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.Resource; // Import explícito para o Resource do Spring
 import org.springframework.stereotype.Service;
 
 import java.io.*;
@@ -27,14 +28,13 @@ public class QuestionProcessor {
 
     @Autowired
     private Ontology ontology;
-
     private Path pythonScriptPath;
 
     @PostConstruct
     public void initialize() {
         logger.info("Iniciando QuestionProcessor (@PostConstruct)...");
         try {
-            var resource = new ClassPathResource("pln_processor.py");
+            Resource resource = new ClassPathResource("pln_processor.py");
             if (!resource.exists()) {
                 throw new FileNotFoundException("Script Python não encontrado no classpath: pln_processor.py");
             }
@@ -43,9 +43,9 @@ public class QuestionProcessor {
             try (InputStream inputStream = resource.getInputStream()) {
                 Files.copy(inputStream, this.pythonScriptPath);
             }
-            this.pythonScriptPath.toFile().setExecutable(true, false);
+            boolean executable = this.pythonScriptPath.toFile().setExecutable(true, false);
+            logger.info("Script Python extraído para path temporário: {} (Executável: {})", this.pythonScriptPath, executable);
             this.pythonScriptPath.toFile().deleteOnExit();
-            logger.info("Script Python extraído para path temporário executável: {}", this.pythonScriptPath);
         } catch (IOException e) {
             logger.error("CRÍTICO: Erro ao inicializar e preparar script Python: {}", e.getMessage(), e);
         }
@@ -68,7 +68,12 @@ public class QuestionProcessor {
             String sparqlQuery = buildSparqlQuery(templateContent, placeholders);
             resposta.setSparqlQuery(sparqlQuery);
 
-            String targetVariable = "ticker".equals(templateId.replace("Template_", "").substring(0, 1)) || "2A".equals(templateId.replace("Template_", "")) || "3A".equals(templateId.replace("Template_", "")) ? "ticker" : "valor";
+            String targetVariable;
+            if ("Template_2A".equals(templateId) || "Template_3A".equals(templateId)) {
+                targetVariable = "ticker";
+            } else {
+                targetVariable = "valor";
+            }
             
             List<String> results = ontology.executeQuery(sparqlQuery, targetVariable);
 
@@ -95,23 +100,30 @@ public class QuestionProcessor {
         if (exitCode != 0) {
             String stderr = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
             logger.error("Script Python falhou com código {}. Stderr: {}", exitCode, stderr);
-            throw new IOException("Falha na execução do script Python.");
+            throw new IOException("Falha na execução do script Python: " + stderr);
         }
         logger.info("Saída (stdout) do script Python: {}", stdout);
+        if(stdout.isBlank()){
+             throw new IOException("Script Python retornou uma saída vazia.");
+        }
         return new ObjectMapper().readValue(stdout, new TypeReference<>() {});
     }
 
     private String buildSparqlQuery(String templateContent, Map<String, String> placeholders) {
         String query = templateContent;
-        for (Map.Entry<String, String> entry : placeholders.entrySet()) {
-            query = query.replace(entry.getKey(), entry.getValue());
+        if (placeholders != null) {
+            for (Map.Entry<String, String> entry : placeholders.entrySet()) {
+                query = query.replace(entry.getKey(), entry.getValue());
+            }
         }
         return query;
     }
 
     private String readTemplateContent(String templateId) throws IOException {
         String path = "Templates/" + templateId + ".txt";
-        try (InputStream in = new ClassPathResource(path).getInputStream()) {
+        Resource resource = new ClassPathResource(path);
+        if (!resource.exists()) throw new FileNotFoundException("Template SPARQL não encontrado: " + path);
+        try (InputStream in = resource.getInputStream()) {
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
