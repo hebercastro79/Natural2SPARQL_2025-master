@@ -1,8 +1,17 @@
+# Framework Web e Servidor WSGI
 Flask
 gunicorn
+
+# Processamento de Linguagem Natural (PLN)
 spacy
-# transformers (se seu pln_processor.py ou modelos spaCy os exigirem explicitamente)
-# torch      (mesma consideração acima)
-# nltk       (se seu pln_processor.py usa)
-rdflib==6.1.1 
+# Nota: transformers e torch são dependências pesadas.
+# Se o seu pln_processor.py usa modelos baseados em Transformers, elas são essenciais.
+transformers
+torch
+
+# Ontologia e SPARQL
+rdflib==6.1.1
 pyparsing==3.0.9
+
+# Requisições HTTP
+requests
