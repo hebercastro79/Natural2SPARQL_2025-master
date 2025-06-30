@@ -14,7 +14,8 @@ import org.springframework.web.bind.annotation.*;
 
 /**
  * Classe principal da aplicação Spring Boot.
- * Serve como o ponto de entrada e o controlador REST que expõe os endpoints da API.
+ * Esta classe serve como o ponto de entrada para a aplicação e também como o
+ * controlador REST que expõe os endpoints da API para a interface web.
  */
 @SpringBootApplication
 @RestController
@@ -26,8 +27,8 @@ public class Main {
     private final QuestionProcessor questionProcessor;
 
     /**
-     * Construtor para injeção de dependências.
-     * @param questionProcessor O serviço que processa as perguntas.
+     * Construtor para injeção de dependências via Spring.
+     * @param questionProcessor O serviço que contém a lógica de negócio.
      */
     @Autowired
     public Main(QuestionProcessor questionProcessor) {
@@ -35,7 +36,7 @@ public class Main {
     }
 
     /**
-     * Ponto de entrada que inicia a aplicação Spring Boot.
+     * Ponto de entrada principal que inicia a aplicação Spring Boot.
      */
     public static void main(String[] args) {
         SpringApplication.run(Main.class, args);
@@ -43,19 +44,23 @@ public class Main {
     }
 
     /**
-     * ENDPOINT 1: Gera a consulta SPARQL a partir de uma pergunta em linguagem natural.
-     * Recebe: {"pergunta": "..."}
-     * Retorna: {"sparqlQuery": "...", "templateId": "..."} ou um erro.
+     * Endpoint para gerar a consulta SPARQL a partir de uma pergunta em linguagem natural.
+     * Este é o primeiro passo do fluxo da interface.
+     * 
+     * @param request Um objeto JSON com a chave "pergunta". Ex: {"pergunta": "Qual o preço da PETR4?"}
+     * @return Um ResponseEntity contendo a query gerada e o ID do template, ou um erro.
      */
     @PostMapping("/gerar_consulta")
     public ResponseEntity<ProcessamentoDetalhadoResposta> gerarConsulta(@RequestBody PerguntaRequest request) {
         logger.info("Recebida requisição para /gerar_consulta: '{}'", request.getPergunta());
+        
         if (request.getPergunta() == null || request.getPergunta().isBlank()) {
             ProcessamentoDetalhadoResposta erro = new ProcessamentoDetalhadoResposta();
             erro.setErro("A pergunta não pode ser vazia.");
             return ResponseEntity.badRequest().body(erro);
         }
 
+        // Chama o método específico para gerar a query no serviço
         ProcessamentoDetalhadoResposta resposta = questionProcessor.generateSparqlQuery(request.getPergunta());
         
         if (resposta.getErro() != null) {
@@ -68,19 +73,23 @@ public class Main {
     }
 
     /**
-     * ENDPOINT 2: Executa uma consulta SPARQL já gerada.
-     * Recebe: {"sparqlQuery": "...", "templateId": "..."}
-     * Retorna: {"resposta": "..."} ou um erro.
+     * Endpoint para executar uma consulta SPARQL que já foi gerada.
+     * Este é o segundo passo do fluxo da interface, acionado pelo botão "Executar".
+     * 
+     * @param request Um objeto JSON com a query e o ID do template. Ex: {"sparqlQuery": "SELECT...", "templateId": "Template_1A"}
+     * @return Um ResponseEntity contendo o resultado da consulta, ou um erro.
      */
     @PostMapping("/executar_query")
     public ResponseEntity<ProcessamentoDetalhadoResposta> executarConsulta(@RequestBody ExecucaoRequest request) {
         logger.info("Recebida requisição para /executar_query com templateId: {}", request.getTemplateId());
+
         if (request.getSparqlQuery() == null || request.getSparqlQuery().isBlank() || request.getTemplateId() == null) {
             ProcessamentoDetalhadoResposta erro = new ProcessamentoDetalhadoResposta();
             erro.setErro("A query SPARQL ou o ID do template não foram fornecidos.");
             return ResponseEntity.badRequest().body(erro);
         }
         
+        // Chama o método específico para executar a query no serviço
         ProcessamentoDetalhadoResposta resposta = questionProcessor.executeSparqlQuery(request.getSparqlQuery(), request.getTemplateId());
         
          if (resposta.getErro() != null) {
