@@ -26,7 +26,6 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.regex.Pattern;
 
-// Importações explícitas para evitar ambiguidade e erros de "cannot find symbol"
 import org.apache.jena.vocabulary.RDF;
 import org.apache.jena.vocabulary.RDFS;
 
@@ -37,12 +36,11 @@ public class Ontology {
     private static final Logger logger = LoggerFactory.getLogger(Ontology.class);
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
     
-    // Declaração das constantes estáticas da classe
     private static final String ONT_PREFIX = "https://dcm.ffclrp.usp.br/lssb/stock-market-ontology#";
     private static final String[] PREGAO_FILES = { "Datasets/dados_novos_anterior.xlsx", "Datasets/dados_novos_atual.xlsx" };
     private static final String INFO_EMPRESAS_FILE = "Templates/Informacoes_Empresas.xlsx";
     private static final String ONTOLOGY_FILE = "ontologiaB3.ttl";
-    private static final String INFERENCE_OUTPUT_FILE = "ontologiaB3_com_inferencia.ttl"; // Variável que estava faltando
+    private static final String INFERENCE_OUTPUT_FILE = "ontologiaB3_com_inferencia.ttl";
 
     private Model baseModel;
     private InfModel infModel;
@@ -72,7 +70,12 @@ public class Ontology {
             infModel = ModelFactory.createInfModel(reasoner, baseModel);
             logger.info("--- Modelo de inferência criado. Total de triplas (base + inferidas): {} ---", infModel.size());
 
-            saveInferredModel();
+            // =========================================================================
+            // CORREÇÃO: A linha abaixo foi comentada para evitar OutOfMemoryError no Render.
+            // A aplicação funcionará com o modelo em memória (infModel).
+            // saveInferredModel(); 
+            // =========================================================================
+            
             logger.info("<<< ONTOLOGIA INICIALIZADA COM SUCESSO >>>");
 
         } catch (Exception e) {
@@ -92,13 +95,11 @@ public class Ontology {
 
         try (InputStream excelFile = resourceFile.getInputStream(); Workbook workbook = new XSSFWorkbook(excelFile)) {
             Sheet sheet = workbook.getSheetAt(0);
-            
             for (Row row : sheet) {
                 if (row.getRowNum() == 0) continue; 
-                String nomeEmpresa = getStringCellValue(row.getCell(0)); // Col A
-                String tickersStr = getStringCellValue(row.getCell(1));  // Col B
-                String setor = getStringCellValue(row.getCell(5));        // Col F
-
+                String nomeEmpresa = getStringCellValue(row.getCell(0));
+                String tickersStr = getStringCellValue(row.getCell(1));
+                String setor = getStringCellValue(row.getCell(5));
                 if (nomeEmpresa == null || nomeEmpresa.isBlank() || tickersStr == null || tickersStr.isBlank()) continue;
                 
                 Resource empresaResource = baseModel.createResource(ONT_PREFIX + "Empresa_" + normalizarTextoJava(nomeEmpresa));
