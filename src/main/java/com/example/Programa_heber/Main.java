@@ -1,5 +1,6 @@
 package com.example.Programa_heber;
 
+import com.example.Programa_heber.model.ExecucaoRequest;
 import com.example.Programa_heber.model.PerguntaRequest;
 import com.example.Programa_heber.model.ProcessamentoDetalhadoResposta;
 import com.example.Programa_heber.service.QuestionProcessor;
@@ -8,28 +9,24 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 /**
  * Classe principal da aplicação Spring Boot.
- * Esta classe serve como o ponto de entrada para a aplicação e também como o
- * controlador REST que expõe os endpoints da API.
+ * Serve como o ponto de entrada e o controlador REST que expõe os endpoints da API.
  */
 @SpringBootApplication
 @RestController
-@CrossOrigin(origins = "*") // Permite requisições de qualquer frontend. Para produção, pode ser mais restritivo.
+@CrossOrigin(origins = "*") // Permite requisições de qualquer frontend.
 public class Main {
 
     private static final Logger logger = LoggerFactory.getLogger(Main.class);
 
-    // Injeção do nosso serviço principal que contém a lógica de negócio.
     private final QuestionProcessor questionProcessor;
 
     /**
-     * Construtor recomendado para injeção de dependências.
-     * O Spring Boot automaticamente fornecerá uma instância de QuestionProcessor.
+     * Construtor para injeção de dependências.
      * @param questionProcessor O serviço que processa as perguntas.
      */
     @Autowired
@@ -38,45 +35,60 @@ public class Main {
     }
 
     /**
-     * Ponto de entrada principal que inicia a aplicação Spring Boot.
-     * @param args Argumentos de linha de comando.
+     * Ponto de entrada que inicia a aplicação Spring Boot.
      */
     public static void main(String[] args) {
         SpringApplication.run(Main.class, args);
-        logger.info(">>> Aplicação Natural2SPARQL iniciada e pronta para receber requisições na porta 8080. <<<");
+        logger.info(">>> Aplicação Natural2SPARQL iniciada e pronta para receber requisições. <<<");
     }
 
     /**
-     * Endpoint para processar uma pergunta enviada em linguagem natural.
-     * Espera um POST para /processar_pergunta com um corpo JSON como: {"pergunta": "Qual o preço da PETR4?"}
-     *
-     * @param request O objeto da requisição contendo a pergunta.
-     * @return Um ResponseEntity contendo o objeto ProcessamentoDetalhadoResposta com a query gerada e o resultado.
+     * ENDPOINT 1: Gera a consulta SPARQL a partir de uma pergunta em linguagem natural.
+     * Recebe: {"pergunta": "..."}
+     * Retorna: {"sparqlQuery": "...", "templateId": "..."} ou um erro.
      */
-    @PostMapping("/processar_pergunta")
-    public ResponseEntity<ProcessamentoDetalhadoResposta> processarPergunta(@RequestBody PerguntaRequest request) {
-        // Validação da entrada
-        if (request == null || request.getPergunta() == null || request.getPergunta().trim().isEmpty()) {
-            logger.warn("Recebida requisição para /processar_pergunta sem uma pergunta válida.");
-            ProcessamentoDetalhadoResposta errorReply = new ProcessamentoDetalhadoResposta();
-            errorReply.setErro("A pergunta não pode ser vazia.");
-            return ResponseEntity.badRequest().body(errorReply);
+    @PostMapping("/gerar_consulta")
+    public ResponseEntity<ProcessamentoDetalhadoResposta> gerarConsulta(@RequestBody PerguntaRequest request) {
+        logger.info("Recebida requisição para /gerar_consulta: '{}'", request.getPergunta());
+        if (request.getPergunta() == null || request.getPergunta().isBlank()) {
+            ProcessamentoDetalhadoResposta erro = new ProcessamentoDetalhadoResposta();
+            erro.setErro("A pergunta não pode ser vazia.");
+            return ResponseEntity.badRequest().body(erro);
         }
 
-        logger.info("Recebida pergunta para processamento: '{}'", request.getPergunta());
+        ProcessamentoDetalhadoResposta resposta = questionProcessor.generateSparqlQuery(request.getPergunta());
+        
+        if (resposta.getErro() != null) {
+            logger.error("Erro ao gerar consulta: {}", resposta.getErro());
+            return ResponseEntity.internalServerError().body(resposta);
+        }
+        
+        logger.info("Consulta gerada com sucesso para o template: {}", resposta.getTemplateId());
+        return ResponseEntity.ok(resposta);
+    }
 
-        // Delega o trabalho pesado para a camada de serviço
-        ProcessamentoDetalhadoResposta respostaDetalhada = questionProcessor.processQuestion(request.getPergunta());
-
-        // Se o serviço retornou uma mensagem de erro, consideramos uma falha interna
-        if (respostaDetalhada.getErro() != null) {
-            logger.error("Erro retornado pelo serviço QuestionProcessor: {}", respostaDetalhada.getErro());
-            // Retorna um status HTTP 500 para indicar um problema no servidor
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(respostaDetalhada);
+    /**
+     * ENDPOINT 2: Executa uma consulta SPARQL já gerada.
+     * Recebe: {"sparqlQuery": "...", "templateId": "..."}
+     * Retorna: {"resposta": "..."} ou um erro.
+     */
+    @PostMapping("/executar_query")
+    public ResponseEntity<ProcessamentoDetalhadoResposta> executarConsulta(@RequestBody ExecucaoRequest request) {
+        logger.info("Recebida requisição para /executar_query com templateId: {}", request.getTemplateId());
+        if (request.getSparqlQuery() == null || request.getSparqlQuery().isBlank() || request.getTemplateId() == null) {
+            ProcessamentoDetalhadoResposta erro = new ProcessamentoDetalhadoResposta();
+            erro.setErro("A query SPARQL ou o ID do template não foram fornecidos.");
+            return ResponseEntity.badRequest().body(erro);
+        }
+        
+        ProcessamentoDetalhadoResposta resposta = questionProcessor.executeSparqlQuery(request.getSparqlQuery(), request.getTemplateId());
+        
+         if (resposta.getErro() != null) {
+            logger.error("Erro ao executar consulta: {}", resposta.getErro());
+            return ResponseEntity.internalServerError().body(resposta);
         }
 
-        logger.info("Pergunta processada com sucesso. Resposta: {}", respostaDetalhada.getResposta());
-        // Se tudo correu bem, retorna um status 200 OK com a resposta.
-        return ResponseEntity.ok(respostaDetalhada);
+        logger.info("Consulta executada com sucesso. Resultado: {}", resposta.getResposta());
+        return ResponseEntity.ok(resposta);
     }
 }

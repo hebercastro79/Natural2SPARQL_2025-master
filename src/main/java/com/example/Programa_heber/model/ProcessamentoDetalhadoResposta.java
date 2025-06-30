@@ -1,21 +1,29 @@
 package com.example.Programa_heber.model;
 
-import com.fasterxml.jackson.annotation.JsonInclude; // Opcional, para omitir nulos no JSON de resposta
+import com.fasterxml.jackson.annotation.JsonInclude;
 
-@JsonInclude(JsonInclude.Include.NON_NULL) // Opcional: não serializa campos nulos para JSON
+/**
+ * Esta classe é um DTO (Data Transfer Object) que encapsula a resposta completa
+ * do processamento de uma pergunta. Ela é usada para comunicar o resultado
+ * entre o backend e o frontend em formato JSON.
+ * A anotação @JsonInclude(JsonInclude.Include.NON_NULL) garante que campos
+ * com valor nulo (como 'erro' ou 'resposta') não sejam incluídos no JSON final,
+ * tornando a resposta mais limpa.
+ */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class ProcessamentoDetalhadoResposta {
 
     private String sparqlQuery;
     private String resposta;
     private String erro;
-    private String debugInfo; // Campo para informações de debug do script Python
+    private String templateId; // Campo crucial para o fluxo de 2 etapas
 
-    // Construtores
+    // Construtor padrão é necessário para a desserialização do Jackson/Spring
     public ProcessamentoDetalhadoResposta() {
-        // Construtor padrão
     }
 
-    // Getters e Setters
+    // Getters e Setters para todos os campos
+
     public String getSparqlQuery() {
         return sparqlQuery;
     }
@@ -40,25 +48,11 @@ public class ProcessamentoDetalhadoResposta {
         this.erro = erro;
     }
 
-    public String getDebugInfo() {
-        return debugInfo;
+    public String getTemplateId() {
+        return templateId;
     }
 
-    public void setDebugInfo(String debugInfo) {
-        this.debugInfo = debugInfo;
-    }
-
-    @Override
-    public String toString() {
-        // Evita quebras de linha excessivas no log, útil para sparqlQuery e debugInfo
-        String queryNoNewline = (sparqlQuery != null) ? sparqlQuery.replace("\n", " ").replace("\r", " ") : null;
-        String debugNoNewline = (debugInfo != null) ? debugInfo.replace("\n", " ").replace("\r", " ") : null;
-
-        return "ProcessamentoDetalhadoResposta{" +
-                "sparqlQuery='" + queryNoNewline + '\'' +
-                ", resposta='" + resposta + '\'' +
-                ", erro='" + erro + '\'' +
-                ", debugInfo='" + debugNoNewline + '\'' +
-                '}';
+    public void setTemplateId(String templateId) {
+        this.templateId = templateId;
     }
 }
