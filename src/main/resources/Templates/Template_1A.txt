@@ -4,12 +4,11 @@ PREFIX b3: <https://dcm.ffclrp.usp.br/lssb/stock-market-ontology#>
 
 SELECT DISTINCT ?valor
 WHERE {
-  ?empresaPrincipal rdfs:label #ENTIDADE_NOME#@pt .
-  ?empresaPrincipal b3:temValorMobiliarioNegociado ?entidadeEmpresaVM .
-  ?entidadeEmpresaVM b3:temValorMobiliarioNegociado ?vmNegociado .
-  ?vmNegociado b3:negociado ?negociadoInst . 
+  ?empresa rdfs:label #ENTIDADE_NOME#@pt .
+  ?empresa b3:temValorMobiliarioNegociado ?vm .
+  ?vm b3:negociado ?negociadoInst . 
   ?negociadoInst b3:negociadoDurante ?pregao .
   ?pregao b3:ocorreEmData #DATA# .          
-  ?negociadoInst b3:#VALOR_DESEJADO# ?valor . 
+  ?negociadoInst #VALOR_DESEJADO# ?valor . 
 } 
 LIMIT 10

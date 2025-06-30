@@ -1,35 +1,11 @@
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX b3: <https://dcm.ffclrp.usp.br/lssb/stock-market-ontology#>
-PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
-SELECT DISTINCT ?ticker # Apenas ?ticker aqui. O BIND abaixo define ?ticker.
+SELECT DISTINCT ?ticker
 WHERE {
-  ?empresa rdfs:label #ENTIDADE_NOME#@pt . # Assumindo que seus labels têm @pt
-
-  # Caminho 1: Empresa -> temVM -> VM_Intermediario_A -> representadoPor -> Codigo -> ticker
-  OPTIONAL {
-    ?empresa b3:temValorMobiliarioNegociado ?vmIntermediario . 
-    ?vmIntermediario b3:representadoPor ?codigoInst1 .
-    ?codigoInst1 b3:ticker ?tickerPath1 .
-    FILTER(REGEX(STR(?tickerPath1), "^[A-Z]{4}[0-9]{1,2}$", "i"))
-  }
-
-  # Caminho 2: Empresa -> temVM (onde o VM já é a instância do código, ou tem ticker direto) -> ticker
-  OPTIONAL {
-    ?empresa b3:temValorMobiliarioNegociado ?codigoInstVM . 
-    ?codigoInstVM b3:ticker ?tickerPath2 . 
-    FILTER(REGEX(STR(?tickerPath2), "^[A-Z]{4}[0-9]{1,2}$", "i"))
-  }
-
-  # Caminho 3: Empresa -> representadoPor -> Codigo -> ticker
-  OPTIONAL {
-    ?empresa b3:representadoPor ?codigoInstDireto .
-    ?codigoInstDireto b3:ticker ?tickerPath3 .
-    FILTER(REGEX(STR(?tickerPath3), "^[A-Z]{4}[0-9]{1,2}$", "i"))
-  }
-  
-  BIND(COALESCE(?tickerPath1, ?tickerPath2, ?tickerPath3) AS ?ticker)
-  FILTER(BOUND(?ticker))
+  ?empresa rdfs:label #ENTIDADE_NOME#@pt .
+  ?empresa b3:temValorMobiliarioNegociado ?vm .
+  ?vm b3:representadoPor ?codigo .
+  ?codigo b3:ticker ?ticker .
 }
 ORDER BY ?ticker
-LIMIT 20

@@ -1,17 +1,2 @@
-# Framework Web e Servidor WSGI
-Flask
-gunicorn
-
-# Processamento de Linguagem Natural (PLN)
-spacy
-# Nota: transformers e torch são dependências pesadas.
-# Se o seu pln_processor.py usa modelos baseados em Transformers, elas são essenciais.
-transformers
-torch
-
-# Ontologia e SPARQL
-rdflib==6.1.1
-pyparsing==3.0.9
-
-# Requisições HTTP
-requests
+spacy==3.5.0
+https://github.com/explosion/spacy-models/releases/download/pt_core_news_sm-3.5.0/pt_core_news_sm-3.5.0.tar.gz

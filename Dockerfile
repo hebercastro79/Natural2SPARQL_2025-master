@@ -1,34 +1,34 @@
-# Usar uma imagem base Python oficial.
+# --- ESTÁGIO 1: BUILD DA APLICAÇÃO JAVA COM MAVEN ---
+FROM maven:3.9.6-eclipse-temurin-17 AS builder
+
+WORKDIR /build
+COPY pom.xml .
+RUN mvn dependency:go-offline
+COPY src ./src
+RUN mvn clean package -DskipTests
+
+# --- ESTÁGIO 2: IMAGEM FINAL DE EXECUÇÃO ---
 FROM python:3.9-slim
 
-# Definir o diretório de trabalho na imagem.
 WORKDIR /app
 
-# Instalar dependências do sistema necessárias para compilação
-# (como gcc para a biblioteca 'blis', uma dependência do spacy)
+# Instala o Java Runtime Environment (JRE)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential gcc && \
+    apt-get install -y --no-install-recommends openjdk-17-jre-headless && \
     rm -rf /var/lib/apt/lists/*
 
-# Copiar o arquivo de requisitos primeiro para aproveitar o cache do Docker.
-COPY requirements.txt .
+# Copia o arquivo de requisitos do código-fonte para a imagem
+# O JAR ainda não existe aqui, então copiamos dos fontes
+COPY src/main/resources/requirements.txt .
+
+# Instala as dependências Python, incluindo spacy e o modelo
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Baixar o modelo de linguagem spaCy para português
-# Certifique-se que 'spacy' está no requirements.txt
-RUN python -m spacy download pt_core_news_sm
+# Copia o JAR executável criado no estágio anterior
+COPY --from=builder /build/target/*.jar app.jar
 
-# Copiar o código da aplicação Flask (web_app.py) para o diretório de trabalho.
-COPY web_app.py .
+# Expõe a porta que o Spring Boot usa
+EXPOSE 8080
 
-# Copiar o arquivo de ontologia CORRETO (com inferência) para o diretório /app.
-COPY ontologiaB3_com_inferencia.ttl /app/ontologiaB3_com_inferencia.ttl
-
-# Copiar toda a pasta de resources para dentro da estrutura /app/src/main/resources no container.
-COPY src/main/resources /app/src/main/resources
-
-# Informar ao Docker que a aplicação escuta na porta X.
-EXPOSE 5000
-
-# Comando para executar a aplicação usando Gunicorn.
-CMD gunicorn --bind 0.0.0.0:$PORT -w 2 --timeout 120 web_app:app
+# Comando para iniciar a aplicação Java
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]

@@ -1,22 +1,13 @@
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX b3: <https://dcm.ffclrp.usp.br/lssb/stock-market-ontology#>
-PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> 
-SELECT DISTINCT ?ticker ?empresaLabel 
+
+SELECT DISTINCT ?ticker
 WHERE {
+  ?setorUri rdfs:label #SETOR#@pt .
   ?empresa b3:atuaEm ?setorUri .
-  ?setorUri rdfs:label ?setorLabelFromOntology .
-  FILTER(STR(?setorLabelFromOntology) = #SETOR#) 
-  ?empresa rdfs:label ?empresaLabel .
-  OPTIONAL { 
-    ?empresa b3:temValorMobiliarioNegociado ?vmOpt .
-    ?vmOpt b3:representadoPor ?codOpt .
-    ?codOpt b3:ticker ?tickerViaVm .
-  }
-  OPTIONAL {
-    ?empresa b3:representadoPor ?codDirOpt . 
-    ?codDirOpt b3:ticker ?tickerViaDireto .
-  }
-  BIND(COALESCE(?tickerViaVm, ?tickerViaDireto) AS ?ticker) 
-  FILTER(BOUND(?ticker)) 
-  FILTER REGEX(STR(?ticker), "^[A-Z]{4}[0-9]{1,2}$", "i")
-} ORDER BY ?empresaLabel ?ticker LIMIT 100
+  ?empresa b3:temValorMobiliarioNegociado ?vm .
+  ?vm b3:representadoPor ?codigo .
+  ?codigo b3:ticker ?ticker .
+} 
+ORDER BY ?ticker
+LIMIT 100
