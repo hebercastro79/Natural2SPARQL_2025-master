@@ -1,2 +1,6 @@
+# Framework Web não é necessário aqui, pois o Java/Spring é o servidor
+# rdflib não é necessário aqui, pois o Java/Jena manipula o RDF
+
+# Dependências apenas para o script de PLN
 spacy==3.5.0
 https://github.com/explosion/spacy-models/releases/download/pt_core_news_sm-3.5.0/pt_core_news_sm-3.5.0.tar.gz
